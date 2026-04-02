@@ -31,9 +31,9 @@
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/seu-usuario/recon.git
-cd recon
-chmod +x recontop.sh
+git clone https://github.com/vichxvid/recon-homosapiens
+cd recon-homosapiens
+chmod +x recon_homosapiens.sh
 ```
 
 ### 2. Instale as dependências obrigatórias
