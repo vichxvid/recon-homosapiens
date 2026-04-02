@@ -1,3 +1,5 @@
+**AVISO: AINDA ESTÁ NA V2...**
+
 **Full Automated Reconnaissance Framework v3.0**
 
 [![Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
