@@ -334,3 +334,16 @@ Ao final do scan, a **etapa 20** gera automaticamente dois arquivos em `09_repor
 ```
 
 ---
+
+## Sistemas suportados
+
+| Sistema | Suporte |
+|---|---|
+| Arch Linux | ✅ Testado |
+| Ubuntu / Debian | ✅ Suportado |
+| Kali Linux | ✅ Suportado |
+| Parrot OS | ✅ Suportado |
+| macOS | ⚠️ Parcial (algumas ferramentas via brew) |
+| Windows | ❌ Não suportado (use WSL2) |
+
+---
