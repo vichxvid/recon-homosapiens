@@ -135,37 +135,37 @@ yay -S seclists               # Arch Linux (AUR)
 
 **Scan padrão:**
 ```bash
-./recontop.sh exemplo.com
+./recon_homosapiens.sh exemplo.com
 ```
 
 **Scan rápido — apenas discovery, sem scans ativos:**
 ```bash
-./recontop.sh exemplo.com --skip-scans
+./recon_homosapiens.sh exemplo.com --skip-scans
 ```
 
 **Scan rápido sem screenshots:**
 ```bash
-./recontop.sh exemplo.com --skip-scans --no-screenshots
+./recon_homosapiens.sh exemplo.com --skip-scans --no-screenshots
 ```
 
 **Scan completo em modo profundo com mais threads:**
 ```bash
-./recontop.sh exemplo.com --deep --threads 200
+./recon_homosapiens.sh exemplo.com --deep --threads 200
 ```
 
 **Scan com delay entre requests (alvo com WAF):**
 ```bash
-./recontop.sh exemplo.com --curl-delay 2
+./recon_homosapiens.sh exemplo.com --curl-delay 2
 ```
 
 **Scan profundo cobrindo todos os hosts sem limite:**
 ```bash
-./recontop.sh exemplo.com --deep --limit-cors 9999 --limit-sensitive 9999 --limit-lfi 9999
+./recon_homosapiens.sh exemplo.com --deep --limit-cors 9999 --limit-sensitive 9999 --limit-lfi 9999
 ```
 
 **Reconhecimento rápido + relatório de vulnerabilidades:**
 ```bash
-./recontop.sh exemplo.com --threads 150 --no-screenshots
+./recon_homosapiens.sh exemplo.com --threads 150 --no-screenshots
 ```
 
 ---
