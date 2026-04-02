@@ -99,13 +99,13 @@ yay -S seclists               # Arch Linux (AUR)
 ## Uso
 
 ```bash
-./recontop.sh <dominio> [opções]
+./recon_homosapiens.sh <dominio> [opções]
 ```
 
 **Uso básico:**
 
 ```bash
-./recontop.sh alvo.com
+./recon_homosapiens.sh alvo.com
 ```
 
 ---
