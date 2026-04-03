@@ -100,7 +100,7 @@
 
 ```bash
 git clone https://github.com/vichxvid/recon-homosapiens
-cd recon.sh
+cd recon-homosapiens/
 chmod +x recon.sh
 ./recon.sh --install
 ```
