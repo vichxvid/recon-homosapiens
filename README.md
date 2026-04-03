@@ -138,7 +138,7 @@ pip install uro arjun wafw00f ghauri --break-system-packages
 sudo apt install sqlmap curl python3
 ```
 
-**Dependências opcionais:**
+**Dependências opcionais (Recomendado instalar):**
 ```bash
 go install github.com/sensepost/gowitness@latest
 go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
