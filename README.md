@@ -8,7 +8,7 @@
 [![Version](https://img.shields.io/badge/Version-1.0-red?style=flat-square)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](https://github.com)
 
-> **⚠ USE APENAS EM SISTEMAS COM AUTORIZAÇÃO EXPLÍCITA. Uso não autorizado é ilegal.**
+> **CRÉDITOS TOTAL A MIM MESMO**
 
 [Funcionalidades](#-funcionalidades) · [Instalação](#-instalação) · [Uso](#-uso) · [Módulos](#-módulos-de-scan) · [Relatório](#-relatório-de-saída) · [FAQ](#-faq)
 
