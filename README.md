@@ -20,7 +20,7 @@
 
 **recon.sh** é um framework de reconhecimento ofensivo totalmente automatizado, desenvolvido para profissionais de segurança, pentesters e bug bounty hunters. Com um único comando, ele executa uma cadeia completa de recon — desde enumeração de subdomínios até detecção de vulnerabilidades — entregando um relatório consolidado pronto para exploração.
 
-### O que há de novo na v1.0
+### O que há de novo?
 
 | # | Feature | Descrição |
 |---|---------|-----------|
