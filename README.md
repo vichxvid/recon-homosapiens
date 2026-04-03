@@ -99,7 +99,7 @@
 ### Auto-instalação (recomendado)
 
 ```bash
-git clone https://github.com/seu-usuario/recon.sh
+git clone https://github.com/vichxvid/recon-homosapiens
 cd recon.sh
 chmod +x recon.sh
 ./recon.sh --install
