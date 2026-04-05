@@ -1,166 +1,172 @@
 # recon.py
 
 ```
+ ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+ ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+ ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+ ██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║
+ ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
+ ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝
  Full Automated Reconnaissance Framework  v6.0
 ```
 
-**Recon.py** is a fully automated web reconnaissance and vulnerability scanning framework written in Python 3. It orchestrates more than 30 external tools across a structured pipeline covering subdomain enumeration, URL collection, JS analysis, parameter discovery, WAF detection, active exploitation tests and AI-assisted reporting — all from a single command.
+**Recon.py** é um framework de reconhecimento e varredura de vulnerabilidades totalmente automatizado, escrito em Python 3. Ele orquestra mais de 30 ferramentas externas em um pipeline estruturado que cobre enumeração de subdomínios, coleta de URLs, análise de JS, descoberta de parâmetros, detecção de WAF, testes ativos de exploração e relatórios assistidos por IA — tudo a partir de um único comando.
 
-> **Use only on systems for which you have explicit written authorization.**
+> **Use somente em sistemas para os quais você possui autorização explícita e por escrito.**
 
 ---
 
-## Table of Contents
+## Índice
 
-- [Overview](#overview)
-- [Architecture](#architecture)
+- [Visão Geral](#visão-geral)
+- [Arquitetura](#arquitetura)
 - [Pipeline](#pipeline)
-- [Scan Profiles](#scan-profiles)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Configuration Reference](#configuration-reference)
-- [Output Structure](#output-structure)
-- [AI Features](#ai-features)
-- [Security & Ethics](#security--ethics)
+- [Perfis de Scan](#perfis-de-scan)
+- [Pré-requisitos](#pré-requisitos)
+- [Instalação](#instalação)
+- [Uso](#uso)
+- [Referência de Configuração](#referência-de-configuração)
+- [Estrutura de Saída](#estrutura-de-saída)
+- [Funcionalidades de IA](#funcionalidades-de-ia)
+- [Segurança e Ética](#segurança-e-ética)
 - [Changelog](#changelog)
 
 ---
 
-## Overview
+## Visão Geral
 
-Recon.py was designed around three principles: **robustness**, **scalability**, and **signal-to-noise ratio**. Every component that talks to external tools is routed through a centralized execution layer that handles timeouts, ANSI stripping, error classification, and disk-backed output to prevent memory exhaustion on large scans.
+O Recon.py foi desenvolvido em torno de três princípios: **robustez**, **escalabilidade** e **relação sinal-ruído**. Todo componente que se comunica com ferramentas externas passa por uma camada de execução centralizada que trata timeouts, remoção de escape ANSI, classificação de erros e saída diretamente em disco para evitar esgotamento de memória em alvos grandes.
 
-The framework is self-contained. It auto-detects which optional tools are installed, adapts its scan intensity based on observed WAF responses, and can persist findings across sessions using SQLite with WAL mode and a dedicated insert worker to avoid race conditions under high concurrency.
+O framework é autossuficiente. Ele detecta automaticamente quais ferramentas opcionais estão instaladas, adapta a intensidade do scan com base nas respostas de WAF observadas e pode persistir resultados entre sessões via SQLite com modo WAL e um worker dedicado de inserção para evitar race conditions em alta concorrência.
 
-Anthropic's Claude API is optionally integrated at multiple points: AI attack planning, intelligent vulnerability triage, WAF bypass payload generation, and natural-language executive summary generation for non-technical stakeholders.
+A API da Anthropic (Claude) é integrada opcionalmente em múltiplos pontos: planejamento de ataque com IA, triagem inteligente de vulnerabilidades, geração de payloads de bypass de WAF e geração de resumo executivo em linguagem natural para stakeholders não técnicos.
 
 ---
 
-## Architecture
+## Arquitetura
 
 ### ToolRunner
 
-All subprocess calls pass through a single `ToolRunner` instance. It standardizes:
+Todas as chamadas de subprocesso passam por uma única instância de `ToolRunner`. Ela padroniza:
 
-- Return code normalization (`-1` timeout, `-2` binary not found, `-3` OSError)
-- Automatic ANSI escape strip from stdout/stderr
-- Configurable per-call timeout
-- Direct-to-disk output mode for memory-intensive tools (nuclei, katana, ffuf)
-- Dry-run passthrough that skips actual execution while preserving the call graph
+- Normalização de código de retorno (`-1` timeout, `-2` binário não encontrado, `-3` OSError)
+- Remoção automática de escapes ANSI de stdout/stderr
+- Timeout configurável por chamada
+- Modo de saída direta em disco para ferramentas de alto consumo de memória (nuclei, katana, ffuf)
+- Passagem transparente em modo dry-run, que pula a execução real preservando o grafo de chamadas
 
 ### CircuitBreaker
 
-Each scan module (XSS, SQLi, LFI, etc.) is wrapped by a `CircuitBreaker`. After 3 consecutive failures, the circuit opens and the module is skipped for the remainder of the run. This prevents silent loops where broken tools produce empty files that look like clean scan results.
+Cada módulo de scan (XSS, SQLi, LFI, etc.) é envolto por um `CircuitBreaker`. Após 3 falhas consecutivas, o circuito abre e o módulo é ignorado pelo restante da execução. Isso previne loops silenciosos onde ferramentas quebradas produzem arquivos vazios que aparentam ser resultados limpos.
 
-### SQLite Persistence
+### Persistência SQLite
 
-Findings are written to a SQLite database using WAL journal mode and a dedicated background thread that drains an `asyncio.Queue`-style `queue.Queue`. This eliminates write contention when dozens of scan threads try to persist findings simultaneously.
+Os achados são gravados em um banco SQLite com modo de journal WAL e uma thread de background dedicada que drena uma `queue.Queue`. Isso elimina a contenção de escrita quando dezenas de threads de scan tentam persistir achados simultaneamente.
 
-Tables: `subdomains`, `vulns`, `blocked_ips`, `scan_history`.
+Tabelas: `subdomains`, `vulns`, `blocked_ips`, `scan_history`.
 
-### Rate & Feedback System
+### Sistema de Rate e Feedback
 
-The framework tracks HTTP 429 responses at two levels:
+O framework rastreia respostas HTTP 429 em dois níveis:
 
-- **Global backoff** — shared across all threads, automatically increases on repeated 429s and decays on successful responses.
-- **Per-host backoff** — isolated to the specific host returning 429s, leaving other hosts at full speed.
+- **Backoff global** — compartilhado entre todas as threads, aumenta automaticamente em 429s repetidos e decai em respostas bem-sucedidas.
+- **Backoff por host** — isolado ao host específico que retorna 429, mantendo os demais hosts em velocidade total.
 
-Both counters are protected by dedicated threading locks (a v6 fix for race conditions under GIL).
+Ambos os contadores são protegidos por locks dedicados de threading (correção da v6 para race conditions sob GIL).
 
-### URL Deduplication
+### Deduplicação de URLs
 
-Before active scans begin, `url_signature()` normalizes each URL (sorted query params, stripped values) to produce a structural fingerprint. `deduplicate_by_signature()` then removes semantically identical URLs, reducing scan load by approximately 80% on typical targets.
+Antes dos scans ativos, `url_signature()` normaliza cada URL (parâmetros de query ordenados, valores removidos) para gerar uma assinatura estrutural. `deduplicate_by_signature()` remove então URLs semanticamente idênticas, reduzindo a carga de scan em aproximadamente 80% em alvos típicos.
 
-### Payload Feedback Loop
+### Loop de Feedback de Payloads
 
-Every HTTP response feeds back into the payload selection engine. Payloads that consistently return 403 are recorded (keyed by normalized prefix) and deprioritized in subsequent requests, reducing noise and WAF signature burns.
+Cada resposta HTTP alimenta de volta o mecanismo de seleção de payloads. Payloads que consistentemente retornam 403 são registrados (indexados por prefixo normalizado) e despriorizados nas requisições seguintes, reduzindo ruído e queima de assinaturas WAF.
 
 ---
 
 ## Pipeline
 
-The scan executes in strict step order. Each step writes its output to a defined file so downstream steps can consume it independently.
+O scan é executado em ordem rigorosa de etapas. Cada etapa grava sua saída em um arquivo definido para que as etapas seguintes possam consumi-la de forma independente.
 
-| Step | Name | Tools |
-|------|------|-------|
-| 00 | Health Check | binary validation, API ping, SQLite probe |
-| 01 | Subdomain Enumeration | subfinder, amass, assetfinder, findomain, dnsx, shuffledns |
-| 02 | Passive Intelligence | Shodan API, crt.sh, SecurityTrails |
-| 03 | Alive Hosts | httpx |
-| 03b | SPA Crawling | Playwright (headless) |
+| Etapa | Nome | Ferramentas |
+|-------|------|-------------|
+| 00 | Health Check | validação de binários, ping de API, probe SQLite |
+| 01 | Enumeração de Subdomínios | subfinder, amass, assetfinder, findomain, dnsx, shuffledns |
+| 02 | Inteligência Passiva | Shodan API, crt.sh, SecurityTrails |
+| 03 | Hosts Ativos | httpx |
+| 03b | Crawling de SPA | Playwright (headless) |
 | 04 | Port Scanning | naabu |
 | 05 | Screenshots | gowitness |
 | 05b | Subdomain Takeover | subzy |
-| 05c | Technology Profiler | whatweb, header analysis |
+| 05c | Technology Profiler | whatweb, análise de headers |
 | 05d | Cloud Recon | AWS S3, GCS, Azure Blob, Kubernetes, Docker API |
-| 06 | URL Collection | waybackurls, gau, katana |
-| 07 | URL Filtering | uro, category split (php/api/admin/js) |
-| 07b | WAF Detection | wafw00f, manual header fingerprinting |
-| 08 | JS Analysis | regex secrets, TruffleHog v3, JWT validation |
-| 09 | Parameter Extraction | uro, qsreplace, arjun, httpx alive check |
-| 10 | GF Patterns | gf (xss/sqli/lfi/ssrf/redirect/ssti/idor/cors) |
-| 11 | Directory Brute-force | ffuf |
-| 12 | 403 Bypass | header/path manipulation techniques |
-| 13 | CORS | origin reflection, null origin, subdomain trust |
-| 14 | Security Headers | strict-transport, csp, x-frame, referrer-policy |
-| 15 | Sensitive Files | backup, config, git, env file exposure |
-| 16 | Metadata Harvesting | exiftool, document author/GPS leakage |
-| 17 | XSS | dalfox, manual reflected, DOM, header injection |
-| 18 | SQL Injection | ghauri, error-based, blind, POST body |
-| 19 | LFI / Path Traversal | payload list, context validation |
-| 19b | Open Redirect | parameter-based, header-based |
-| 19c | NoSQL Injection | MongoDB operator injection |
-| 19d | SSTI | Jinja2/Twig/Freemarker detection |
-| 19e | SSRF | interactsh callback, internal IP probing |
-| 19f | XXE | external entity, blind OOB |
-| 19g | IDOR | numeric/UUID parameter enumeration |
-| 19h | CRLF Injection | header injection via CRLF sequences |
-| 19i | Host Header Injection | X-Forwarded-Host, X-Host manipulation |
-| 19j | GraphQL | introspection, batch query abuse |
-| 20 | Nuclei | CVE templates, misconfigs, exposures |
-| 20b | AI Triage | Claude API severity classification |
-| 20c | Credential Leak | HaveIBeenPwned API |
-| 20d | PoC Generator | auto-generated Python scripts per finding |
-| 20e | Executive Summary | Claude API non-technical report |
-| 20f | Output Encryption | GPG AES-256 on sensitive files |
+| 06 | Coleta de URLs | waybackurls, gau, katana |
+| 07 | Filtragem de URLs | uro, divisão por categoria (php/api/admin/js) |
+| 07b | Detecção de WAF | wafw00f, fingerprinting manual por headers |
+| 08 | Análise de JS | regex de secrets, TruffleHog v3, validação de JWT |
+| 09 | Extração de Parâmetros | uro, qsreplace, arjun, verificação alive com httpx |
+| 10 | Padrões GF | gf (xss/sqli/lfi/ssrf/redirect/ssti/idor/cors) |
+| 11 | Brute-force de Diretórios | ffuf |
+| 12 | Bypass de 403 | manipulação de headers e caminhos |
+| 13 | CORS | reflexão de origin, null origin, confiança em subdomínio |
+| 14 | Headers de Segurança | strict-transport, csp, x-frame, referrer-policy |
+| 15 | Arquivos Sensíveis | exposição de backup, config, git, env |
+| 16 | Coleta de Metadados | exiftool, vazamento de autor/GPS em documentos |
+| 17 | XSS | dalfox, refletido manual, DOM, injeção em headers |
+| 18 | SQL Injection | ghauri, error-based, blind, body POST |
+| 19 | LFI / Path Traversal | lista de payloads com validação de contexto |
+| 19b | Open Redirect | via parâmetro, via header |
+| 19c | NoSQL Injection | injeção de operadores MongoDB |
+| 19d | SSTI | detecção de Jinja2/Twig/Freemarker |
+| 19e | SSRF | callback via interactsh, probe de IPs internos |
+| 19f | XXE | entidade externa, OOB cego |
+| 19g | IDOR | enumeração de parâmetros numéricos/UUID |
+| 19h | CRLF Injection | injeção de headers via sequências CRLF |
+| 19i | Host Header Injection | manipulação via X-Forwarded-Host, X-Host |
+| 19j | GraphQL | introspecção, abuso de batch query |
+| 20 | Nuclei | templates de CVE, misconfigs, exposições |
+| 20b | Triagem por IA | classificação de severidade pela API Claude |
+| 20c | Vazamento de Credenciais | API HaveIBeenPwned |
+| 20d | Gerador de PoC | scripts Python gerados automaticamente por achado |
+| 20e | Resumo Executivo | relatório em linguagem natural pela API Claude |
+| 20f | Criptografia de Saída | GPG AES-256 em arquivos sensíveis |
 
 ---
 
-## Scan Profiles
+## Perfis de Scan
 
-Four profiles control thread counts, depth limits, and timing behavior. They can be selected via flags or overridden granularly with individual limit arguments.
+Quatro perfis controlam contagem de threads, limites de profundidade e comportamento de temporização. Podem ser selecionados por flags ou sobrescritos granularmente com argumentos individuais de limite.
 
-| Profile | Flag | Threads | Intent |
-|---------|------|---------|--------|
-| Normal | (default) | 100 | Balanced coverage and speed |
-| Stealth | `--stealth` | 20 | Low-noise, jitter enabled, WAF evasion on, extended delays |
-| Aggressive | `--aggressive` | 200 | Maximum coverage, high concurrency, extended payload lists |
-| Deep | `--deep` | 100 | Increased crawl depth, larger URL/param/JS limits |
+| Perfil | Flag | Threads | Intenção |
+|--------|------|---------|----------|
+| Normal | (padrão) | 100 | Cobertura e velocidade equilibradas |
+| Stealth | `--stealth` | 20 | Baixo ruído, jitter ativado, evasão de WAF, delays estendidos |
+| Agressivo | `--aggressive` | 200 | Cobertura máxima, alta concorrência, listas de payloads estendidas |
+| Deep | `--deep` | 100 | Maior profundidade de crawl, limites ampliados de URL/param/JS |
 
-Dry-run mode (`--dry-run`) simulates the entire pipeline without sending any requests to the target. Useful for validating configuration, scope, and tool availability before an authorized engagement.
+O modo dry-run (`--dry-run`) simula o pipeline inteiro sem enviar nenhuma requisição ao alvo. Útil para validar configuração, escopo e disponibilidade de ferramentas antes de um engagement autorizado.
 
 ---
 
-## Prerequisites
+## Pré-requisitos
 
 ### Python
 
 - Python 3.9+
-- No third-party Python packages required (stdlib only)
+- Nenhuma dependência Python de terceiros (somente stdlib)
 
-### Optional Python packages (for Playwright mode)
+### Pacotes Python opcionais (para modo Playwright)
 
 ```
 pip install playwright
 playwright install chromium
 ```
 
-### External Tools
+### Ferramentas Externas
 
-The following tools extend functionality when installed. Recon.py auto-detects availability and skips modules for tools that are absent.
+As ferramentas abaixo ampliam a funcionalidade quando instaladas. O Recon.py detecta disponibilidade automaticamente e pula módulos para ferramentas ausentes.
 
-**Core (strongly recommended)**
+**Core (fortemente recomendadas)**
 
 ```
 subfinder   httpx       katana      gau         waybackurls
@@ -168,7 +174,7 @@ nuclei      dalfox      ffuf        uro          qsreplace
 gf          dnsx        wafw00f     gowitness    naabu
 ```
 
-**Optional but valuable**
+**Opcionais mas valiosas**
 
 ```
 amass       assetfinder findomain   shuffledns   subzy
@@ -178,21 +184,21 @@ gpg         interactsh  whatweb
 
 ---
 
-## Installation
+## Instalação
 
-### Automated
+### Automatizada
 
-The `--install` flag attempts to install all Go-based tools, Python dependencies, and GF patterns automatically.
+A flag `--install` tenta instalar todas as ferramentas baseadas em Go, dependências Python e padrões GF automaticamente.
 
 ```bash
 python3 recon.py --install
 ```
 
-This requires Go 1.21+ in `PATH` and will run `go install` for each tool. Python tools and Playwright are installed via pip.
+Requer Go 1.21+ no `PATH` e executará `go install` para cada ferramenta. Ferramentas Python e Playwright são instaladas via pip.
 
 ### Manual
 
-Install Go tools individually, for example:
+Instale as ferramentas Go individualmente, por exemplo:
 
 ```bash
 go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
@@ -205,7 +211,6 @@ go install github.com/tomnomnom/gau/v2/cmd/gau@latest
 go install github.com/tomnomnom/waybackurls@latest
 go install github.com/tomnomnom/qsreplace@latest
 go install github.com/tomnomnom/gf@latest
-go install github.com/lc/gau/v2/cmd/gau@latest
 go install github.com/shenwei356/uro@latest
 go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 go install github.com/sensepost/gowitness@latest
@@ -214,117 +219,117 @@ go install github.com/PentestPad/subzy@latest
 
 ---
 
-## Usage
+## Uso
 
-### Basic
-
-```bash
-python3 recon.py target.com
-```
-
-### Common flags
+### Básico
 
 ```bash
-# Multithreaded with deep crawl
-python3 recon.py target.com --threads 200 --deep
-
-# AI-assisted planning + OODA agent
-python3 recon.py target.com --plan --agent --api-key $ANTHROPIC_API_KEY
-
-# Headless SPA crawl (React, Vue, Angular)
-python3 recon.py target.com --playwright
-
-# Real-time alerts on Discord/Slack/Telegram
-python3 recon.py target.com --webhook-url https://hooks.slack.com/...
-
-# Restrict scope and simulate (no requests sent)
-python3 recon.py target.com --whitelist target.com --dry-run
-
-# Encrypt sensitive output files at end of scan
-python3 recon.py target.com --encrypt-output --encrypt-pass 'YourPassphrase'
-
-# Watcher mode: re-runs scan on interval, reports only new findings
-python3 recon.py target.com --watch --watch-interval 3600
-
-# Stealth profile with Shodan passive intel
-python3 recon.py target.com --stealth --shodan-key $SHODAN_API_KEY
-
-# Live HTML dashboard during scan
-python3 recon.py target.com --live-dashboard --dashboard-port 8765
+python3 recon.py alvo.com
 ```
 
-### Full options reference
+### Flags comuns
+
+```bash
+# Multithread com crawl profundo
+python3 recon.py alvo.com --threads 200 --deep
+
+# Planejamento assistido por IA + agente OODA
+python3 recon.py alvo.com --plan --agent --api-key $ANTHROPIC_API_KEY
+
+# Crawl headless de SPA (React, Vue, Angular)
+python3 recon.py alvo.com --playwright
+
+# Alertas em tempo real via Discord/Slack/Telegram
+python3 recon.py alvo.com --webhook-url https://hooks.slack.com/...
+
+# Restringir escopo e simular (sem enviar requisições)
+python3 recon.py alvo.com --whitelist alvo.com --dry-run
+
+# Criptografar arquivos sensíveis ao final do scan
+python3 recon.py alvo.com --encrypt-output --encrypt-pass 'SuaSenha'
+
+# Modo watcher: re-executa o scan em intervalo, reporta somente novos achados
+python3 recon.py alvo.com --watch --watch-interval 3600
+
+# Perfil stealth com inteligência passiva via Shodan
+python3 recon.py alvo.com --stealth --shodan-key $SHODAN_API_KEY
+
+# Dashboard HTML ao vivo durante o scan
+python3 recon.py alvo.com --live-dashboard --dashboard-port 8765
+```
+
+### Referência completa de opções
 
 ```
-positional:
-  domain                   Target domain
+posicional:
+  domain                   Domínio alvo
 
-scan control:
-  --threads N              Concurrent threads (default: 100)
-  --deep                   Increased crawl depth and payload limits
-  --stealth                Low-noise profile: jitter, WAF evasion, reduced speed
-  --aggressive             Maximum coverage and concurrency
-  --skip-scans             Skip all active exploitation steps
-  --skip-screenshots       Skip gowitness screenshots
-  --dry-run                Simulate without sending requests
-  --no-adaptive            Disable adaptive scan adjustment
-  --timeout N              HTTP request timeout in seconds (default: 10)
-  --curl-delay N           Delay between curl calls in seconds
-  --xss-deadline N         Per-URL time limit for XSS manual scans (default: 45s)
+controle de scan:
+  --threads N              Threads concorrentes (padrão: 100)
+  --deep                   Maior profundidade de crawl e limites de payload
+  --stealth                Perfil silencioso: jitter, evasão WAF, velocidade reduzida
+  --aggressive             Cobertura e concorrência máximas
+  --skip-scans             Pula todas as etapas de exploração ativa
+  --skip-screenshots       Pula capturas de tela do gowitness
+  --dry-run                Simula sem enviar requisições
+  --no-adaptive            Desativa ajuste adaptativo de scan
+  --timeout N              Timeout de requisição HTTP em segundos (padrão: 10)
+  --curl-delay N           Delay entre chamadas curl em segundos
+  --xss-deadline N         Limite de tempo por URL nos scans manuais de XSS (padrão: 45s)
 
-intelligence:
-  --plan                   Enable AI attack planner (requires --api-key)
-  --agent                  Enable OODA agent with function calling
-  --api-key KEY            Anthropic API key (or set ANTHROPIC_API_KEY)
-  --shodan-key KEY         Shodan API key for passive intelligence
-  --playwright             Enable headless SPA crawling via Playwright
-  --no-passive-intel       Skip Shodan and passive lookups
+inteligência:
+  --plan                   Ativa o planejador de ataque por IA (requer --api-key)
+  --agent                  Ativa o agente OODA com function calling
+  --api-key KEY            Chave de API Anthropic (ou defina ANTHROPIC_API_KEY)
+  --shodan-key KEY         Chave de API Shodan para inteligência passiva
+  --playwright             Ativa crawling headless de SPA via Playwright
+  --no-passive-intel       Pula Shodan e lookups passivos
 
-limits (per-module URL/param caps):
-  --limit-cors N           CORS check limit (default: 50)
-  --limit-headers N        Header check limit (default: 30)
-  --limit-lfi N            LFI payload limit (default: 30)
-  --limit-idor N           IDOR test limit (default: 30)
-  --limit-sqli N           SQLi URL limit (default: 30)
+limites (caps de URL/param por módulo):
+  --limit-cors N           Limite de verificações CORS (padrão: 50)
+  --limit-headers N        Limite de verificações de headers (padrão: 30)
+  --limit-lfi N            Limite de payloads LFI (padrão: 30)
+  --limit-idor N           Limite de testes IDOR (padrão: 30)
+  --limit-sqli N           Limite de URLs SQLi (padrão: 30)
   ...
 
-output:
-  --sqlite-db PATH         Path to SQLite persistence database
-  --no-delta               Disable delta mode (report all, not just new)
-  --encrypt-output         Encrypt sensitive output files with GPG
-  --encrypt-pass PASS      GPG passphrase for encryption
-  --live-dashboard         Start local HTTP server for live HTML report
-  --dashboard-port N       Dashboard port (default: 8765)
-  --webhook-url URL        Webhook for real-time Discord/Slack/Telegram alerts
+saída:
+  --sqlite-db CAMINHO      Caminho para o banco SQLite de persistência
+  --no-delta               Desativa modo delta (reporta tudo, não só o novo)
+  --encrypt-output         Criptografa arquivos sensíveis de saída com GPG
+  --encrypt-pass SENHA     Passphrase GPG para criptografia
+  --live-dashboard         Inicia servidor HTTP local para relatório HTML ao vivo
+  --dashboard-port N       Porta do dashboard (padrão: 8765)
+  --webhook-url URL        Webhook para alertas em tempo real Discord/Slack/Telegram
 
-scope & safety:
-  --whitelist DOMAINS      Comma-separated allowed domains (safe mode)
-  --hibp-key KEY           HaveIBeenPwned API key for credential leak check
+escopo e segurança:
+  --whitelist DOMINIOS     Domínios permitidos separados por vírgula (modo seguro)
+  --hibp-key KEY           Chave de API HaveIBeenPwned para verificação de credenciais
 
 watcher:
-  --watch                  Watcher mode: repeat scan on interval
-  --watch-interval N       Seconds between watcher runs (default: 3600)
+  --watch                  Modo watcher: repete o scan em intervalo
+  --watch-interval N       Segundos entre execuções do watcher (padrão: 3600)
 
 setup:
-  --install                Install all dependencies automatically
+  --install                Instala todas as dependências automaticamente
 ```
 
 ---
 
-## Configuration Reference
+## Referência de Configuração
 
-### Environment variables
+### Variáveis de ambiente
 
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_API_KEY` | Anthropic Claude API key |
-| `SHODAN_API_KEY` | Shodan API key |
-| `RECON_WORDLIST` | Path to custom wordlist (overrides built-in) |
-| `RECON_WEBHOOK_URL` | Default webhook URL |
+| Variável | Descrição |
+|----------|-----------|
+| `ANTHROPIC_API_KEY` | Chave de API Claude da Anthropic |
+| `SHODAN_API_KEY` | Chave de API Shodan |
+| `RECON_WORDLIST` | Caminho para wordlist personalizada (sobrescreve a padrão) |
+| `RECON_WEBHOOK_URL` | URL de webhook padrão |
 
-Variables can be set in a `.env` file in the working directory or in `~/.recon.env`. Both are loaded automatically at startup.
+As variáveis podem ser definidas em um arquivo `.env` no diretório de trabalho ou em `~/.recon.env`. Ambos são carregados automaticamente na inicialização.
 
-### .env example
+### Exemplo de .env
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-...
@@ -335,79 +340,79 @@ RECON_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 ---
 
-## Output Structure
+## Estrutura de Saída
 
-Each scan creates a timestamped directory under the current working directory.
+Cada scan cria um diretório com timestamp no diretório de trabalho atual.
 
 ```
-target.com_YYYYMMDD_HHMMSS/
+alvo.com_AAAAMMDD_HHMMSS/
 ├── disc/
-│   ├── subdomains.txt          All discovered subdomains
-│   ├── alive.txt               HTTP-responding hosts
-│   └── takeover.txt            Subdomain takeover candidates
+│   ├── subdomains.txt          Todos os subdomínios descobertos
+│   ├── alive.txt               Hosts respondendo via HTTP
+│   └── takeover.txt            Candidatos a subdomain takeover
 ├── urls/
-│   ├── urls_all.txt            Raw merged URL list
-│   ├── urls_clean.txt          Deduplicated, filtered URLs
-│   ├── urls_php.txt            PHP endpoints
-│   ├── urls_api.txt            API endpoints
-│   ├── urls_admin.txt          Admin/dashboard paths
-│   └── urls_js.txt             JavaScript files
+│   ├── urls_all.txt            Lista de URLs brutas consolidadas
+│   ├── urls_clean.txt          URLs deduplicadas e filtradas
+│   ├── urls_php.txt            Endpoints PHP
+│   ├── urls_api.txt            Endpoints de API
+│   ├── urls_admin.txt          Caminhos de admin/dashboard
+│   └── urls_js.txt             Arquivos JavaScript
 ├── params/
-│   ├── params.txt              Unique parameterized URLs
-│   ├── params_alive.txt        Parameterized URLs with live responses
-│   ├── params_fuzz.txt         FUZZ-replaced for direct tool use
-│   ├── param_names.txt         Parameter frequency analysis
-│   └── arjun_raw.txt           Parameters discovered via Arjun
+│   ├── params.txt              URLs parametrizadas únicas
+│   ├── params_alive.txt        URLs parametrizadas com resposta ativa
+│   ├── params_fuzz.txt         Substituídas por FUZZ para uso direto em ferramentas
+│   ├── param_names.txt         Análise de frequência de nomes de parâmetros
+│   └── arjun_raw.txt           Parâmetros descobertos via Arjun
 ├── js/
-│   ├── js_secrets.txt          Potential secrets (API keys, tokens, passwords)
-│   ├── js_secrets_validated.txt JWT expiry status, token validation
-│   ├── js_endpoints.txt        Endpoints extracted from JS bundles
-│   └── trufflehog.txt          TruffleHog v3 JSON output
+│   ├── js_secrets.txt          Possíveis secrets (API keys, tokens, senhas)
+│   ├── js_secrets_validated.txt Status de expiração de JWT, validação de tokens
+│   ├── js_endpoints.txt        Endpoints extraídos de bundles JS
+│   └── trufflehog.txt          Saída JSON do TruffleHog v3
 ├── vulns/
-│   ├── xss.txt / sqli.txt ...  GF pattern matches per vuln class
-│   └── *.txt                   Per-category URL lists
+│   ├── xss.txt / sqli.txt ...  Correspondências de padrões GF por classe de vuln
+│   └── *.txt                   Listas de URLs por categoria
 ├── scans/
-│   ├── dalfox.txt              Confirmed XSS (dalfox)
-│   ├── xss_manual.txt          Reflected XSS (manual)
-│   ├── xss_dom.txt             DOM XSS candidates
-│   ├── sqli_confirmed.txt      Confirmed SQL injection
-│   ├── sqli_error_based.txt    Error-based SQLi
-│   ├── sqli_blind.txt          Blind SQLi candidates
-│   ├── lfi_results.txt         LFI confirmed paths
-│   ├── ssrf_results.txt        SSRF callbacks
-│   ├── ssti_results.txt        SSTI confirmed
-│   ├── xxe_results.txt         XXE findings
-│   ├── idor_results.txt        IDOR candidates
-│   ├── nuclei_critical.txt     Nuclei critical findings
-│   ├── nuclei_high.txt         Nuclei high findings
+│   ├── dalfox.txt              XSS confirmado (dalfox)
+│   ├── xss_manual.txt          XSS refletido (manual)
+│   ├── xss_dom.txt             Candidatos a DOM XSS
+│   ├── sqli_confirmed.txt      SQL injection confirmado
+│   ├── sqli_error_based.txt    SQLi error-based
+│   ├── sqli_blind.txt          Candidatos a SQLi blind
+│   ├── lfi_results.txt         Caminhos LFI confirmados
+│   ├── ssrf_results.txt        Callbacks SSRF
+│   ├── ssti_results.txt        SSTI confirmado
+│   ├── xxe_results.txt         Achados XXE
+│   ├── idor_results.txt        Candidatos a IDOR
+│   ├── nuclei_critical.txt     Achados críticos do Nuclei
+│   ├── nuclei_high.txt         Achados high do Nuclei
 │   └── ...
 ├── extra/
-│   ├── waf_detected.txt        WAF identification per host
-│   ├── cors_results.txt        Misconfigured CORS policies
-│   ├── header_issues.txt       Missing/weak security headers
-│   ├── sensitive_files.txt     Exposed backup/config/git files
-│   ├── metadata.txt            Exiftool findings
-│   └── cloud_recon.txt         Exposed S3/GCS/Azure/K8s/Docker
-├── screenshots/                gowitness captures
+│   ├── waf_detected.txt        Identificação de WAF por host
+│   ├── cors_results.txt        Políticas CORS mal configuradas
+│   ├── header_issues.txt       Headers de segurança ausentes ou fracos
+│   ├── sensitive_files.txt     Arquivos de backup/config/git expostos
+│   ├── metadata.txt            Achados do exiftool
+│   └── cloud_recon.txt         S3/GCS/Azure/K8s/Docker expostos
+├── screenshots/                Capturas do gowitness
 ├── report/
-│   ├── index.html              Self-contained HTML report
-│   ├── vuln_urls.txt           All confirmed findings
-│   ├── vuln_urls.json          Structured findings (JSON)
-│   ├── ai_triage.txt           Claude severity analysis
-│   ├── executive_summary.txt   Non-technical AI summary
-│   ├── credential_leaks.txt    HaveIBeenPwned results
+│   ├── index.html              Relatório HTML autocontido
+│   ├── vuln_urls.txt           Todos os achados confirmados
+│   ├── vuln_urls.json          Achados estruturados (JSON)
+│   ├── ai_triage.txt           Análise de severidade por Claude
+│   ├── executive_summary.txt   Resumo não técnico gerado por IA
+│   ├── credential_leaks.txt    Resultados do HaveIBeenPwned
 │   └── poc/
-│       ├── poc_xss.py          XSS proof-of-concept script
-│       ├── poc_sqli.py         SQLi PoC (sqlmap wrapper)
-│       ├── poc_ssrf.py         SSRF PoC (interactsh probe)
-│       └── poc_idor.py         IDOR PoC (auth header test)
-├── recon.log                   Full timestamped execution log
-└── error.log                   Tool-level error log
+│       ├── poc_xss.py          Script de prova de conceito XSS
+│       ├── poc_sqli.py         PoC SQLi (wrapper sqlmap)
+│       ├── poc_ssrf.py         PoC SSRF (probe via interactsh)
+│       └── poc_idor.py         PoC IDOR (teste com header de autenticação)
+├── recon.log                   Log completo de execução com timestamps
+└── error.log                   Log de erros no nível das ferramentas
 ```
 
-Sensitive files (`js_secrets.txt`, `ai_triage.txt`, `credential_leaks.txt`, etc.) can be encrypted with GPG AES-256 at scan completion using `--encrypt-output`. Originals are removed after encryption.
+Arquivos sensíveis (`js_secrets.txt`, `ai_triage.txt`, `credential_leaks.txt`, etc.) podem ser criptografados com GPG AES-256 ao término do scan usando `--encrypt-output`. Os originais são removidos após a criptografia.
 
-To decrypt:
+Para descriptografar:
 
 ```bash
 gpg --decrypt report/ai_triage.txt.gpg
@@ -415,96 +420,96 @@ gpg --decrypt report/ai_triage.txt.gpg
 
 ---
 
-## AI Features
+## Funcionalidades de IA
 
-All AI features require an Anthropic API key and use `claude-sonnet-4-20250514`.
+Todas as funcionalidades de IA requerem uma chave de API Anthropic e utilizam `claude-sonnet-4-20250514`.
 
-### AI Attack Planner (`--plan`)
+### Planejador de Ataque por IA (`--plan`)
 
-Before active scans begin, the planner sends discovered tech stack, WAF status, and URL categories to the API. The model returns a prioritized list of attack vectors suited to the identified technologies (e.g., PHP targets get higher-priority LFI payloads; GraphQL endpoints trigger introspection checks first).
+Antes dos scans ativos, o planejador envia o stack tecnológico descoberto, status de WAF e categorias de URL para a API. O modelo retorna uma lista priorizada de vetores de ataque adequados às tecnologias identificadas — alvos PHP recebem payloads LFI com maior prioridade; endpoints GraphQL disparam verificações de introspecção primeiro.
 
-### OODA Agent (`--agent`)
+### Agente OODA (`--agent`)
 
-When `--agent` is active, the OODA loop (Observe, Orient, Decide, Act) replaces the static sequential pipeline for active scans. The agent receives post-recon context and uses Anthropic function calling to decide which modules to execute, in which order, and with which parameters. It can adapt mid-run based on intermediate findings.
+Quando `--agent` está ativo, o loop OODA (Observar, Orientar, Decidir, Agir) substitui o pipeline sequencial estático para os scans ativos. O agente recebe o contexto pós-reconhecimento e utiliza function calling da Anthropic para decidir quais módulos executar, em qual ordem e com quais parâmetros. Ele pode se adaptar durante a execução com base em achados intermediários.
 
-### WAF AI Bypass
+### Bypass de WAF por IA
 
-When an active scan receives a 403, the framework optionally queries the API for 3 structurally varied bypass payloads. Responses are cached by `(attack_type, WAF vendor)` key so the same question is never asked twice in a single run. This cache is a v6 addition that reduces API cost significantly on targets with consistent WAF behavior.
+Quando um scan ativo recebe um 403, o framework opcionalmente consulta a API para gerar 3 payloads de bypass estruturalmente variados. As respostas são armazenadas em cache pela chave `(tipo_de_ataque, vendor_do_WAF)` para que a mesma pergunta nunca seja feita duas vezes em uma única execução. Este cache é uma adição da v6 que reduz significativamente o custo de API em alvos com comportamento de WAF consistente.
 
-### AI Triage
+### Triagem por IA
 
-After all active scans complete, confirmed findings are sent to the API for severity classification and false-positive filtering. Output includes confidence scores and recommended CVSS ratings.
+Após a conclusão de todos os scans ativos, os achados confirmados são enviados à API para classificação de severidade e filtragem de falsos positivos. A saída inclui pontuações de confiança e avaliações de CVSS recomendadas.
 
-### Executive Summary
+### Resumo Executivo
 
-A separate API call generates a plain-language summary for management audiences. The prompt explicitly instructs the model to avoid technical jargon and frame each finding in terms of business impact and risk priority.
+Uma chamada de API separada gera um resumo em linguagem natural para audiências de gestão. O prompt instrui explicitamente o modelo a evitar jargões técnicos e enquadrar cada achado em termos de impacto nos negócios e prioridade de risco.
 
 ---
 
-## Security & Ethics
+## Segurança e Ética
 
-- **Authorization required.** Running this tool against systems without explicit written authorization is illegal in most jurisdictions. The tool is intended for use during authorized penetration tests, bug bounty engagements (within defined scope), and security assessments of systems you own.
-- **Whitelist mode** (`--whitelist target.com`) causes the framework to refuse to scan any hostname not matching the approved list. Use it when working inside a large organization with many subdomains and a defined scope.
-- **Dry-run mode** (`--dry-run`) allows full pipeline validation — including AI planning, tool detection, and directory setup — without sending a single request to the target.
-- **PoC scripts** are generated with manual execution steps. They are designed as confirmation tools, not attack scripts, and include comments instructing operators not to automate them against production systems.
-- **Credential leak data** from HIBP is written to disk only and is never transmitted beyond the HIBP API and optional GPG-encrypted output.
+- **Autorização obrigatória.** Executar esta ferramenta contra sistemas sem autorização explícita por escrito é ilegal na maioria das jurisdições. A ferramenta é destinada para uso durante testes de penetração autorizados, programas de bug bounty dentro do escopo definido e avaliações de segurança de sistemas próprios.
+- **Modo whitelist** (`--whitelist alvo.com`) faz o framework recusar o scan de qualquer hostname que não corresponda à lista aprovada. Use ao trabalhar dentro de uma grande organização com muitos subdomínios e escopo definido.
+- **Modo dry-run** (`--dry-run`) permite validação completa do pipeline — incluindo planejamento por IA, detecção de ferramentas e configuração de diretórios — sem enviar uma única requisição ao alvo.
+- **Scripts de PoC** são gerados com etapas de execução manual. São projetados como ferramentas de confirmação, não como scripts de ataque, e incluem comentários instruindo operadores a não automatizá-los contra sistemas em produção.
+- **Dados de vazamento de credenciais** do HIBP são gravados somente em disco e nunca transmitidos além da API do HIBP e da saída opcionalmente criptografada com GPG.
 
 ---
 
 ## Changelog
 
-### v6.0 — Robustness & Scalability
+### v6.0 — Robustez e Escalabilidade
 
-**Critical fixes**
-- Race condition on `_rate_429_count` and `_rate_backoff` — now protected by a dedicated threading lock
-- `except Exception: pass` replaced throughout with specific exception types and structured logging
-- Circuit Breaker pattern implemented — modules are disabled after 3 consecutive failures
-- WAF AI Bypass integrated into XSS/SQLi flow with per-WAF response cache
+**Correções críticas**
+- Race condition em `_rate_429_count` e `_rate_backoff` — agora protegidos por lock dedicado de threading
+- `except Exception: pass` substituído em todo o código por tipos específicos de exceção com logging estruturado
+- Padrão Circuit Breaker implementado — módulos são desabilitados após 3 falhas consecutivas
+- WAF AI Bypass integrado ao fluxo XSS/SQLi com cache de resposta por vendor de WAF
 
-**Architectural additions**
-- `ToolRunner` — centralized subprocess execution (logging, ANSI strip, timeout, disk write)
-- `CircuitBreaker` — prevents silent failure loops in broken modules
-- `url_signature()` + `deduplicate_by_signature()` — reduces redundant URL processing by ~80%
-- `step_initial_health_check()` — validates binaries, API connectivity, and SQLite before any scan step
-- WAF AI Bypass cache keyed by `(attack_type, WAF vendor)` — avoids repeated API calls for identical scenarios
+**Adições arquiteturais**
+- `ToolRunner` — execução centralizada de subprocessos (logging, remoção de ANSI, timeout, escrita em disco)
+- `CircuitBreaker` — previne loops de falha silenciosa em módulos quebrados
+- `url_signature()` + `deduplicate_by_signature()` — reduz processamento redundante de URLs em ~80%
+- `step_initial_health_check()` — valida binários, conectividade de API e SQLite antes de qualquer etapa de scan
+- Cache do WAF AI Bypass por chave `(tipo_de_ataque, vendor_WAF)` — evita chamadas repetidas à API para cenários idênticos
 
 ### v5.0
 
-- OODA Agent with Anthropic function calling
-- Playwright headless crawling for SPA targets
-- Native webhook support (Discord, Slack, Telegram)
-- WAF AI Bypass (initial implementation)
-- Async SQLite insert queue with dedicated worker thread
-- `.env` / `RECON_WORDLIST` environment variable support
-- `host_throttle()` fix — per-host backoff no longer blocks the global ThreadPoolExecutor
+- Agente OODA com function calling da Anthropic
+- Crawling headless com Playwright para alvos SPA
+- Suporte nativo a webhooks (Discord, Slack, Telegram)
+- WAF AI Bypass (implementação inicial)
+- Fila assíncrona de inserção SQLite com worker dedicado
+- Suporte a variáveis via `.env` e `RECON_WORDLIST`
+- Correção do `host_throttle()` — backoff por host não bloqueia mais o ThreadPoolExecutor global
 
 ### v4.0
 
-- Cloud reconnaissance: S3, GCS, Azure Blob, Kubernetes API, Docker API
-- PoC Generator for confirmed XSS, SQLi, SSRF, IDOR
-- Credential leak check via HaveIBeenPwned API
-- Executive Summary AI report
-- GPG AES-256 output encryption
-- Per-host rate limiting
-- Live Dashboard (local HTTP server with auto-refresh)
-- Whitelist / Safe Mode
-- Dry-run mode
+- Reconhecimento em nuvem: S3, GCS, Azure Blob, Kubernetes API, Docker API
+- Gerador de PoC para XSS, SQLi, SSRF e IDOR confirmados
+- Verificação de vazamento de credenciais via API HaveIBeenPwned
+- Relatório de Resumo Executivo por IA
+- Criptografia de saída GPG AES-256
+- Rate limiting por host
+- Live Dashboard (servidor HTTP local com auto-refresh)
+- Modo whitelist / Safe Mode
+- Modo dry-run
 
 ### v3.0
 
-- Technology Profiler (stack detection before scan)
-- AI Attack Planner
-- Payload Feedback Loop (403 tracking, payload deprioritization)
-- SQLite persistence with delta mode
-- 403 Bypass module
-- Metadata Harvesting (exiftool)
-- Self-contained HTML report
-- Watcher Mode (scheduled re-scan with delta reporting)
-- JS Secret Validation (JWT expiry, active token probe)
-- GF pattern integration
+- Technology Profiler (detecção de stack antes do scan)
+- Planejador de Ataque por IA
+- Loop de Feedback de Payloads (rastreamento de 403, despriorização de payloads)
+- Persistência SQLite com modo delta
+- Módulo de Bypass de 403
+- Coleta de Metadados (exiftool)
+- Relatório HTML autocontido
+- Modo Watcher (re-scan agendado com relatório delta)
+- Validação de Secrets JS (expiração de JWT, probe de token ativo)
+- Integração de padrões GF
 
 ---
 
-## License
+## Licença
 
-For authorized security testing only. See [LICENSE](LICENSE) for terms.
+Apenas para testes de segurança autorizados. Consulte [LICENSE](LICENSE) para os termos.
