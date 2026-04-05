@@ -12,7 +12,7 @@
 
 **Recon.py** é um framework de reconhecimento e varredura de vulnerabilidades totalmente automatizado, escrito em Python 3. Ele orquestra mais de 30 ferramentas externas em um pipeline estruturado que cobre enumeração de subdomínios, coleta de URLs, análise de JS, descoberta de parâmetros, detecção de WAF, testes ativos de exploração e relatórios assistidos por IA — tudo a partir de um único comando.
 
-> **Use somente em sistemas para os quais você possui autorização explícita e por escrito.**
+> **COM CONTRIBUIÇÃO DE: EU MESMO**
 
 ---
 
