@@ -377,6 +377,3 @@ URLs são ordenadas por score decrescente antes de serem passadas para os módul
 
 ---
 
-## Licença
-
-Este projeto é disponibilizado para fins educacionais e de pesquisa em segurança. Consulte o arquivo `LICENSE` para os termos completos.
